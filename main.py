@@ -1,91 +1,72 @@
+import sys
 import pandas as pd
-from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_absolute_error
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt
+from weatherPredictor import read_weather_data, preprocess_weather_data, create_target_column, train_weather_model, predict_weather
 
+class WeatherPredictionApp(QMainWindow):
+    def __init__(self, core, predictors):
+        super().__init__()
+        self.setWindowTitle("Weather Prediction App")
+        self.core = core
+        self.predictors = predictors
 
-def read_weather_data(file_path):
-    """
-    Reads weather data from a CSV file and returns a DataFrame.
-    """
-    weather = pd.read_csv(file_path, index_col="DATE")
-    return weather
+        # Create GUI components
+        self.date_label = QLabel("Enter Date (YYYY-MM-DD):")
+        self.date_input = QLineEdit()
+        self.predict_button = QPushButton("Predict")
+        self.result_label = QLabel("")
 
+        # Set font for labels
+        label_font = QFont()
+        label_font.setPointSize(12)
+        self.date_label.setFont(label_font)
+        self.result_label.setFont(label_font)
 
-def preprocess_weather_data(weather):
-    """
-    Preprocesses weather data by selecting relevant columns, handling missing values, and data type conversion.
-    """
-    core = weather[["PRCP", "TMAX", "TMIN"]].copy()
-    core.columns = ["precip", "tempMax", "tempMin"]
-    core["precip"].fillna(0, inplace=True)
-    core = core.fillna(method="ffill")
-    core.index = pd.to_datetime(core.index)
-    return core
+        # Center-align labels
+        self.date_label.setAlignment(Qt.AlignCenter)
+        self.result_label.setAlignment(Qt.AlignCenter)
 
+        # Set style for Predict button
+        button_style = "QPushButton { background-color: #AA336A; color: white; border: none; padding: 10px 20px; }"
+        button_style += "QPushButton:hover { background-color: #702963; }"
+        self.predict_button.setStyleSheet(button_style)
 
-def create_target_column(core):
-    """
-    Creates the 'target' column in the core DataFrame for temperature prediction.
-    """
-    core["target"] = core["tempMax"].shift(-1)
-    return core
+        # Set up layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.date_label)
+        layout.addWidget(self.date_input)
+        layout.addWidget(self.predict_button)
+        layout.addWidget(self.result_label)
 
+        central_widget = QWidget()
+        central_widget.setLayout(layout)
+        self.setCentralWidget(central_widget)
 
-def train_weather_model(core, predictors):
-    """
-    Trains a weather prediction model using Ridge Regression.
-    """
-    regr = Ridge(alpha=0.1)
-    train = core.dropna()
-    test = core.dropna()
-    regr.fit(train[predictors], train["target"])
-    return regr, test
+        # Connect button click event to prediction function
+        self.predict_button.clicked.connect(self.predict_weather)
 
-
-def predict_weather(model, test_data, input_date, predictors):
-    input_date = pd.to_datetime(input_date)
-    input_date = input_date.replace(hour=0, minute=0, second=0)
-
-    input_data = test_data[test_data.index.date == input_date.date()]  # Compare only the date part
-    print("Input Data (Formatted):")
-    print(input_data)
-    if not input_data.empty:
-        predictions = model.predict(input_data[predictors])
-        mae = mean_absolute_error(input_data["target"], predictions)
-        return predictions[0], mae
-    else:
-        return None, None
-
+    def predict_weather(self):
+        input_date = self.date_input.text()
+        model, test_data = train_weather_model(self.core, self.predictors)
+        prediction, mae = predict_weather(model, test_data, input_date, self.predictors)
+        if prediction is not None:
+            self.result_label.setText(f"Predicted Temperature: {prediction:.2f}°C\nMean Absolute Error: {mae:.2f}")
+        else:
+            self.result_label.setText("No data available for the specified date.")
 
 def main():
-    # Define file path to your weather data CSV
-    file_path = "sfoWeather.csv"
-
-    # Read and preprocess weather data
-    weather = read_weather_data(file_path)
+    # Read weather data and preprocess it
+    weather = read_weather_data("sfoWeather.csv")
     core = preprocess_weather_data(weather)
-
-    # Create the 'target' column
     core = create_target_column(core)
-
-    # Define predictors for the model
     predictors = ["precip", "tempMax", "tempMin"]
 
-    # Train the weather prediction model
-    model, test_data = train_weather_model(core, predictors)
-
-    # Get user input for the date they want to predict
-    input_date = input("Enter the date (YYYY-MM-DD) for weather prediction: ")
-
-    # Predict the weather for the specified date
-    prediction, mae = predict_weather(model, test_data, input_date, predictors)
-
-    if prediction is not None:
-        print("Predicted average temperature for {}: {:.2f}°F".format(input_date, prediction))
-        print("Mean Absolute Error:", mae)
-    else:
-        print("No data available for the specified date.")
-
+    app = QApplication(sys.argv)
+    window = WeatherPredictionApp(core, predictors)
+    window.show()
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()
